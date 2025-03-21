@@ -9,8 +9,7 @@ st.title("💳 Fraud Detection System")
 
 # Transaction input fields
 transaction_amount = st.number_input("Transaction Amount", min_value=0.0, step=0.01)
-transaction_date = st.text_input("Transaction Date (YYYY-MM-DD)")
-transaction_time = st.text_input("Transaction Time (HH:MM:SS)")
+transaction_date = st.date_input("Transaction Date","today")
 transaction_channel = st.selectbox("Transaction Channel", ["Online", "In-store", "Mobile"])
 transaction_payment_mode_anonymous = st.text_input("Payment Mode")
 payment_gateway_bank_anonymous = st.text_input("Payment Gateway/Bank")
@@ -25,8 +24,7 @@ payee_id_anonymous = st.text_input("Payee ID")
 if st.button("Check for Fraud"):
     transaction_data = {
         "transaction_amount": transaction_amount,
-        "transaction_date": transaction_date,
-        "transiction_time": transaction_time,
+        "transaction_date": str(transaction_date),
         "transaction_channel": transaction_channel,
         "transaction_payment_mode_anonymous": transaction_payment_mode_anonymous,
         "payment_gateway_bank_anonymous": payment_gateway_bank_anonymous,

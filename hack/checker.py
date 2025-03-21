@@ -1,5 +1,5 @@
 import mysql.connector
-import json, os
+import os
 from dotenv import load_dotenv
 import fastapi
 import uvicorn
@@ -11,13 +11,12 @@ load_dotenv()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this for security in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---- MySQL Connection ----
 def get_db_connection():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST"),
@@ -26,7 +25,7 @@ def get_db_connection():
         database=os.getenv("DB_DB")
     )
 
-# ---- Fetch Active Rules from Database ----
+
 def fetch_rules():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -35,11 +34,9 @@ def fetch_rules():
     conn.close()
     return rules
 
-# ---- Define Transaction Model ----
 class Transaction(BaseModel):
     transaction_amount: float
     transaction_date: str
-    transaction_time: str
     transaction_channel: str
     transaction_payment_mode_anonymous: str
     payment_gateway_bank_anonymous: str
@@ -50,7 +47,6 @@ class Transaction(BaseModel):
     transaction_id_anonymous: str
     payee_id_anonymous: str
 
-# ---- Apply Rules to a Transaction ----
 def check_transaction(transaction: dict):
     rules = fetch_rules()
     is_fraud = False
@@ -59,20 +55,16 @@ def check_transaction(transaction: dict):
     for rule in rules:
         rule_type = rule.get("rule_type", "")
         threshold = rule.get("threshold", None)
-
-        # Fetch additional blocking conditions
         blocked_ip = rule.get("blocked_ip", None)
         blocked_browser = rule.get("blocked_payer_browser", None)
         blocked_gateway = rule.get("blocked_payment_gateway", None)
         blocked_email = rule.get("blocked_email", None)
 
-        # Apply numeric threshold rules
         if rule_type == "Threshold Value" and threshold is not None:
             if transaction.get("transaction_amount", 0) > float(threshold):
                 is_fraud = True
                 fraud_reasons.append(f"High transaction amount (>{threshold})")
 
-        # Additional direct matching conditions
         if blocked_ip and transaction.get("payee_ip_anonymous") == blocked_ip:
             is_fraud = True
             fraud_reasons.append(f"Blocked IP: {blocked_ip}")
@@ -91,14 +83,33 @@ def check_transaction(transaction: dict):
 
     return {"is_fraud": is_fraud, "fraud_reasons": fraud_reasons}
 
-# ---- Fraud Detection Endpoint ----
+def upload_transaction(transaction: Transaction,result):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = """
+    INSERT INTO transactions (
+        transaction_amount, transaction_date, transaction_channel, 
+        transaction_payment_mode_anonymous, payment_gateway_bank_anonymous, 
+        payer_browser_anonymous, payer_email_anonymous, payee_ip_anonymous, 
+        payer_mobile_anonymous, transaction_id_anonymous, payee_id_anonymous, is_fraud
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    values = (
+        transaction.transaction_amount, transaction.transaction_date, transaction.transaction_channel,
+        transaction.transaction_payment_mode_anonymous, transaction.payment_gateway_bank_anonymous,
+        transaction.payer_browser_anonymous, transaction.payer_email_anonymous, transaction.payee_ip_anonymous,
+        transaction.payer_mobile_anonymous, transaction.transaction_id_anonymous, transaction.payee_id_anonymous, result
+    )
+    cursor.execute(query, values)
+    conn.commit()
+    conn.close()
+
 @app.post("/detect")
 def detect(transaction: Transaction):
-    print(transaction)
     transaction_dict = transaction.dict()
     result = check_transaction(transaction_dict)
+    upload_transaction(transaction,result["is_fraud"])
     return result
 
-# ---- Run FastAPI App ----
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
