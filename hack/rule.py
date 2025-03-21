@@ -2,11 +2,8 @@ import streamlit as st
 import mysql.connector
 import pandas as pd
 
-# ---- Streamlit Page Config ----
 st.set_page_config(page_title="Fraud Detection Rule Engine", layout="wide")
 
-
-# ---- MySQL Connection ----
 def get_db_connection():
     return mysql.connector.connect(
         host="127.0.0.1",
@@ -15,8 +12,6 @@ def get_db_connection():
         database="frauddetect"
     )
 
-
-# ---- Function to Fetch Rules ----
 def fetch_rules():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -25,8 +20,6 @@ def fetch_rules():
     conn.close()
     return pd.DataFrame(rules)
 
-
-# ---- Function to Add a Rule ----
 def add_rule(rule_type, value):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -56,15 +49,13 @@ def delete_rule(rule_id):
     cursor.execute("DELETE FROM fraud_rules WHERE id = %s", (rule_id,))
     conn.commit()
     conn.close()
-# ---- Streamlit UI ----
+
 st.markdown("<h1>Fraud Detection Rule Engine</h1>", unsafe_allow_html=True)
 
-# 📜 Display Existing Rules
 st.subheader("Active Fraud Rules")
 rules_df = fetch_rules()
 st.dataframe(rules_df, height=300)
 
-# ➕ Add New Rule
 st.subheader("Manage Rules")
 with st.expander("Add New Rule"):
     rule_type = st.selectbox("Rule Type", ["Threshold Value", "Blocked IP", "Blocked Payment Gateway"])

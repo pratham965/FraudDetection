@@ -2,12 +2,10 @@ import streamlit as st
 import requests
 import json
 
-# API URL (Ensure FastAPI is running)
 API_URL = "http://127.0.0.1:8000/detect"
 
 st.title("💳 Fraud Detection System")
 
-# Transaction input fields
 transaction_amount = st.number_input("Transaction Amount", min_value=0.0, step=0.01)
 transaction_date = st.date_input("Transaction Date","today")
 transaction_channel = st.selectbox("Transaction Channel", ["Online", "In-store", "Mobile"])
@@ -20,7 +18,6 @@ payer_mobile_anonymous = st.text_input("Payer Mobile")
 transaction_id_anonymous = st.text_input("Transaction ID")
 payee_id_anonymous = st.text_input("Payee ID")
 
-# Submit button
 if st.button("Check for Fraud"):
     transaction_data = {
         "transaction_amount": transaction_amount,
@@ -36,7 +33,6 @@ if st.button("Check for Fraud"):
         "payee_id_anonymous": payee_id_anonymous
     }
 
-    # Send request to FastAPI backend
     response = requests.post(API_URL, json=transaction_data)
 
     if response.status_code == 200:

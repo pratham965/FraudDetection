@@ -25,7 +25,6 @@ def get_db_connection():
         database=os.getenv("DB_DB")
     )
 
-
 def fetch_rules():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
