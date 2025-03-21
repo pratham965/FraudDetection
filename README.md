@@ -1,1 +1,2 @@
 # FraudDetection
+Our solution includes a Rule Engine for administrators to manage fraud detection rules, a Payment Gateway UI for users to verify transactions against predefined rules and an AI model, and a Dashboard for real-time fraud monitoring with transaction data, trends, and evaluation metrics. A TensorFlow-trained autoencoder detects fraud, with a central server handling routing and inference, and MySQL as the database.
