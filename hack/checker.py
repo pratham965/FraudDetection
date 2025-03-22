@@ -92,8 +92,8 @@ def upload_transaction(transaction: Transaction, result):
     INSERT INTO transactions (
         transaction_id_anonymous, transaction_date, transaction_amount, transaction_channel, 
         transaction_payment_mode_anonymous, payment_gateway_bank_anonymous, payer_email_anonymous, payer_mobile_anonymous, 
-        payer_browser_anonymous, payee_id_anonymous, is_fraud, payee_ip_anonymous
-    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        payer_browser_anonymous, payee_id, is_fraud, payee_ip_anonymous
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     values = (
         transaction.transaction_id, transaction.transaction_date, transaction.transaction_amount,
