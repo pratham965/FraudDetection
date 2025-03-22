@@ -6,7 +6,49 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from sklearn.metrics import confusion_matrix, precision_score, recall_score
 import io
+import os
+import threading
+import time
+import logging
 from utils import filter_data, process_data, calculate_metrics, get_time_granularity
+from dotenv import load_dotenv
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
+
+# Try to import functions from db_connector (direct database access)
+try:
+    from db_connector import has_new_data, reset_new_data_flag, update_transactions
+
+    USE_DATABASE = True
+    logger.info("Using MySQL database connection for real-time data")
+except ImportError:
+    # If db_connector fails, fall back to API functions
+    try:
+        from api import has_new_data, reset_new_data_flag
+
+        USE_DATABASE = False
+        logger.info("Using API for real-time data")
+    except ImportError:
+        # Define placeholder functions if both modules are not available
+        def has_new_data():
+            return False
+
+
+        def reset_new_data_flag():
+            pass
+
+
+        def update_transactions():
+            return False
+
+
+        USE_DATABASE = False
+        logger.warning("No real-time data source available")
 
 # Set page configuration
 st.set_page_config(
@@ -15,7 +57,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state for filters
+# Constants
+DATA_DIR = "data"
+LATEST_DATA_FILE = os.path.join(DATA_DIR, "latest_transactions.csv")
+HISTORY_FILE = os.path.join(DATA_DIR, "transaction_history.csv")
+
+# Create data directory if it doesn't exist
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Initialize session state for filters and data
 if 'data' not in st.session_state:
     st.session_state.data = None
 if 'date_range' not in st.session_state:
@@ -28,12 +78,143 @@ if 'transaction_id' not in st.session_state:
     st.session_state.transaction_id = ""
 if 'metrics_date_range' not in st.session_state:
     st.session_state.metrics_date_range = None
+if 'last_refresh_time' not in st.session_state:
+    st.session_state.last_refresh_time = datetime.now()
+if 'auto_refresh' not in st.session_state:
+    st.session_state.auto_refresh = True
+if 'refresh_interval' not in st.session_state:
+    st.session_state.refresh_interval = 5  # Default refresh interval in seconds
+
+
+# Function to check for and load new data
+def check_for_new_data():
+    """Check if new data is available and load it if it is."""
+    try:
+        # If using database, proactively check for updates
+        if USE_DATABASE:
+            if update_transactions():
+                # After updating data files, load the new data
+                if os.path.exists(HISTORY_FILE):
+                    new_data = pd.read_csv(HISTORY_FILE)
+                    st.session_state.data = new_data
+                    st.success("Real-time data updated successfully from database!")
+                    return True
+
+        # Otherwise check for updates via the flag
+        elif has_new_data():
+            # Load new data from the latest transactions file
+            if os.path.exists(HISTORY_FILE):
+                new_data = pd.read_csv(HISTORY_FILE)
+                st.session_state.data = new_data
+                st.success("Real-time data updated successfully!")
+
+                # Reset the new data flag
+                reset_new_data_flag()
+                return True
+    except Exception as e:
+        st.error(f"Error loading new data: {str(e)}")
+        logger.error(f"Error in check_for_new_data: {e}")
+    return False
+
 
 # Header
 st.title("Fraud Analysis Dashboard")
 
-# Data Upload Section
-st.header("Data Upload")
+# Try to load real-time data first if available
+if st.session_state.data is None:
+    # Try to update from database first
+    if USE_DATABASE:
+        try:
+            logger.info("Attempting to load data from MySQL database")
+            if update_transactions():
+                logger.info("Successfully updated transactions from MySQL database")
+
+                if os.path.exists(HISTORY_FILE):
+                    data = pd.read_csv(HISTORY_FILE)
+                    if not data.empty:
+                        # Process data to ensure it has required columns
+                        data = process_data(data)
+
+                        # Store in session state
+                        st.session_state.data = data
+
+                        # Display success message
+                        st.success(f"Successfully loaded {len(data)} transactions from MySQL database")
+                else:
+                    st.warning("Database connection successful but no data written to file")
+            else:
+                st.warning("Could not load data from MySQL database")
+        except Exception as e:
+            st.warning(f"Error connecting to MySQL database: {str(e)}")
+            logger.error(f"Database connection error: {e}")
+
+    # If database loading failed or not available, try loading from file
+    if st.session_state.data is None and os.path.exists(HISTORY_FILE):
+        try:
+            data = pd.read_csv(HISTORY_FILE)
+            if not data.empty:
+                # Process data to ensure it has required columns
+                data = process_data(data)
+
+                # Store in session state
+                st.session_state.data = data
+
+                # Display success message
+                st.success(f"Successfully loaded {len(data)} transactions from saved data file")
+        except Exception as e:
+            st.warning(f"Could not load real-time data: {str(e)}")
+            logger.error(f"File loading error: {e}")
+
+# Real-time data controls section
+st.header("Real-time Data Controls")
+
+# Create two columns for the real-time data controls
+col1, col2, col3 = st.columns([1, 1, 2])
+
+with col1:
+    # Auto-refresh toggle
+    auto_refresh = st.toggle("Auto-refresh", value=st.session_state.auto_refresh)
+    if auto_refresh != st.session_state.auto_refresh:
+        st.session_state.auto_refresh = auto_refresh
+
+with col2:
+    # Refresh interval selector
+    refresh_interval = st.number_input(
+        "Refresh interval (seconds)",
+        min_value=1,
+        max_value=60,
+        value=st.session_state.refresh_interval,
+        step=1
+    )
+    if refresh_interval != st.session_state.refresh_interval:
+        st.session_state.refresh_interval = refresh_interval
+
+with col3:
+    # Manual refresh button and last refresh time
+    col3a, col3b = st.columns(2)
+    with col3a:
+        if st.button("🔄 Refresh Now"):
+            if check_for_new_data():
+                st.rerun()
+            else:
+                st.info("No new data available")
+    with col3b:
+        st.text(f"Last refreshed: {st.session_state.last_refresh_time.strftime('%H:%M:%S')}")
+
+# Auto-refresh logic
+if st.session_state.auto_refresh:
+    # Check if it's time to refresh based on the interval
+    current_time = datetime.now()
+    if (current_time - st.session_state.last_refresh_time).total_seconds() >= st.session_state.refresh_interval:
+        # Update last refresh time
+        st.session_state.last_refresh_time = current_time
+        # Check for new data
+        if check_for_new_data():
+            st.rerun()
+
+# Data Upload Section (alternative to real-time data)
+st.header("Manual Data Upload")
+st.markdown("If you don't have real-time data available, you can manually upload a file:")
 uploaded_file = st.file_uploader("Upload your transaction data (CSV or Excel)", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
@@ -81,7 +262,8 @@ if st.session_state.data is not None:
         st.session_state.date_range = date_range
 
     # Payer ID filter
-    payer_ids = sorted(data['Payer_ID'].unique().tolist())
+    payer_ids = sorted(data['Payer_ID'].astype(str).unique().tolist())
+
     selected_payer = st.sidebar.multiselect(
         "Filter by Payer ID",
         options=payer_ids,
@@ -90,7 +272,7 @@ if st.session_state.data is not None:
     st.session_state.payer_id = selected_payer if selected_payer else None
 
     # Payee ID filter
-    payee_ids = sorted(data['Payee_ID'].unique().tolist())
+    payee_ids = sorted(data['Payee_ID'].astype(str).unique().tolist())
     selected_payee = st.sidebar.multiselect(
         "Filter by Payee ID",
         options=payee_ids,
@@ -648,3 +830,10 @@ else:
 
     Upload a CSV or Excel file with these columns to analyze your fraud detection performance.
     """)
+
+
+def show_app():
+
+
+    # Link back to main2.py
+    st.markdown('[Back to Main](?page=main)')
